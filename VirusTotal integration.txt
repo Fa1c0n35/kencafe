@@ -1,0 +1,108 @@
+### VirusTotal integration ###
+
+
+1 # Enable File Integrity Monitoring in /var/ossec/etc/ossec.conf at the CentOS 8 endpoint to monitor /root in real time.
+
+<syscheck>
+    <directories whodata="yes">/root</directories>
+</syscheck>
+
+
+2 # Add the following rules to /var/ossec/etc/rules/local_rules.xml at the Wazuh manager. These rules are to alert about changes in /root directories detected by FIM scans.
+
+<group name="syscheck,pci_dss_11.5,nist_800_53_SI.7,">
+    <!-- Rules for Linux systems -->
+    <rule id="100200" level="7">
+        <if_sid>550</if_sid>
+        <field name="file">/root</field>
+        <description>File modified in /root directory.</description>
+    </rule>
+    <rule id="100201" level="7">
+        <if_sid>554</if_sid>
+        <field name="file">/root</field>
+        <description>File added to /root directory.</description>
+    </rule>
+</group>
+
+
+
+# Add # /var/ossec/etc/ossec.conf file at the Wazuh manage
+
+<ossec_config>
+  <integration>
+    <name>virustotal</name>
+    <api_key>YOUR_VIRUS_TOTAL_API_KEY</api_key> <!-- Replace with your VirusTotal API key -->
+    <rule_id>100200,100201</rule_id>
+    <alert_format>json</alert_format>
+  </integration>
+</ossec_config>
+
+
+# Create the /var/ossec/active-response/bin/remove-threat.sh
+
+# Change /var/ossec/active-response/bin/remove-threat.sh owner and file permissions.
+chmod 750 /var/ossec/active-response/bin/remove-threat.sh
+chown root:ossec /var/ossec/active-response/bin/remove-threat.sh
+
+
+6 #Run yum install jq if jq is missing. This allows the remove-threat.sh script to process the JSON input.
+
+
+
+7 #Append the following blocks to /var/ossec/etc/ossec.conf
+<ossec_config>
+  <command>
+    <name>remove-threat</name>
+    <executable>remove-threat.sh</executable>
+    <timeout_allowed>no</timeout_allowed>
+  </command>
+
+  <active-response>
+    <disabled>no</disabled>
+    <command>remove-threat</command>
+    <location>local</location>
+    <rules_id>87105</rules_id>
+  </active-response>
+</ossec_config>
+
+
+8 #Edit /var/ossec/etc/decoders/local_decoder.xml at the Wazuh manager and add the following active response decoder configuration.
+<decoder name="ar_log_fields">
+    <parent>ar_log</parent>
+    <regex offset="after_parent">^(\S+) Removed threat located at (\S+)</regex>
+    <order>script_name, path</order>
+</decoder>
+
+
+9 # Add rules to the /var/ossec/etc/rules/local_rules.xml file at the Wazuh manager to alert about the active response results.
+<group name="virustotal,">
+  <rule id="100092" level="12">
+      <if_sid>657</if_sid>
+      <match>Successfully removed threat</match>
+      <description>$(parameters.program) removed threat located at $(parameters.alert.data.virustotal.source.file)</description>
+  </rule>
+
+  <rule id="100093" level="12">
+      <if_sid>657</if_sid>
+      <match>Error removing threat</match>
+      <description>Error removing threat located at $(parameters.alert.data.virustotal.source.file)</description>
+  </rule>
+</group>
+
+
+
+10 # Restart the Wazuh agent to apply local configuration changes.
+systemctl restart wazuh-agent
+
+
+11 # Restart Wazuh manager to apply the configuration changes.
+systemctl restart wazuh-manager
+
+
+
+
+
+
+
+
+ 
